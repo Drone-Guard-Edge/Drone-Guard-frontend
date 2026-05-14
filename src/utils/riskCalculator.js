@@ -30,12 +30,25 @@ export const confidenceToPercent = (confidence) => {
 export const formatDetectionData = (rawData) => {
   if (!rawData) return null;
 
+  // 이미지 데이터가 있으면 base64로 변환
+  let imageData = null;
+  if (rawData.image_data) {
+    // 이미 base64 형식이면 그대로 사용
+    if (rawData.image_data.startsWith("data:image")) {
+      imageData = rawData.image_data;
+    } else {
+      // base64 문자열이면 data URI로 변환
+      imageData = `data:image/${rawData.format || "jpg"};base64,${rawData.image_data}`;
+    }
+  }
+
   return {
     imageId: rawData.image_id,
     filename: rawData.filename,
     width: rawData.width,
     height: rawData.height,
     format: rawData.format,
+    imageData: imageData, // 이미지 데이터 추가
     createdAt: new Date(rawData.created_at),
     source: rawData.source,
     tags: rawData.tags || [],

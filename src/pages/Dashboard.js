@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import DetectionViewer from "../components/DetectionViewer";
 import DetectionList from "../components/DetectionList";
 import { mockDetectionData } from "../api/mockData";
+import { getDetectionDataApi } from "../api/detectionApi";
 import {
   formatDetectionData,
   getOverallRiskLevel,
@@ -12,14 +13,17 @@ const Dashboard = () => {
   const [detectionData, setDetectionData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [communicationMode, setCommunicationMode] = useState("mock"); // "mock" or "api"
-  const [apiData, setApiData] = useState(null); // API 모드에서 받은 데이터
+  const [intervalId, setIntervalId] = useState(null);
 
   useEffect(() => {
     // Mock 데이터로 초기화
     if (communicationMode === "mock") {
       const formattedData = formatDetectionData(mockDetectionData);
       setDetectionData(formattedData);
-      setApiData(null);
+
+      // 기존 interval 정리
+      if (intervalId) clearInterval(intervalId);
+      setIntervalId(null);
     } else {
       // API 모드: 데이터 초기화 (백엔드에서 받을 때까지 대기)
       setDetectionData({
@@ -34,9 +38,32 @@ const Dashboard = () => {
         note: "",
         detections: [],
       });
-      setApiData(null);
+
+      // API 모드: 주기적 GET 요청 시작 (1초마다 프레임 수신)
+      console.log("🔗 API 모드: 백엔드에서 프레임 수신 시작...");
+      const id = setInterval(() => {
+        fetchDetectionDataFromAPI();
+      }, 1000); // 1초마다 GET 요청
+
+      setIntervalId(id);
     }
-  }, [communicationMode]);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [communicationMode, intervalId]);
+
+  const fetchDetectionDataFromAPI = async () => {
+    try {
+      const result = await getDetectionDataApi();
+      if (result.success && result.data) {
+        const formattedData = formatDetectionData(result.data);
+        setDetectionData(formattedData);
+      }
+    } catch (error) {
+      console.error("API 요청 오류:", error);
+    }
+  };
 
   const handleRefresh = () => {
     setLoading(true);
@@ -50,9 +77,9 @@ const Dashboard = () => {
         const formattedData = formatDetectionData(updatedData);
         setDetectionData(formattedData);
       } else {
-        // API 모드: 실제로는 백엔드에서 받아야 함
-        console.log("API 모드: 백엔드에서 데이터를 받아오는 중...");
-        // TODO: 실제 API 호출
+        // API 모드: 즉시 한 번 요청
+        console.log("🔄 수동 갱신: 백엔드에서 데이터를 받아오는 중...");
+        fetchDetectionDataFromAPI();
       }
       setLoading(false);
     }, 500);
@@ -103,8 +130,22 @@ const Dashboard = () => {
 
       {/* 메인 컨테이너 - 2컬럼 레이아웃 */}
       <div className="dashboard-main">
-        {/* 왼쪽: 위험도 정보 */}
+        {/* 왼쪽: 탐지 이미지 */}
         <div className="dashboard-left">
+          {/* 탐지 이미지 뷰어 */}
+          <div className="detection-section">
+            <h2>탐지 결과</h2>
+            <DetectionViewer
+              imageData={detectionData.imageData || null}
+              detections={detectionData.detections}
+              imageWidth={detectionData.width}
+              imageHeight={detectionData.height}
+            />
+          </div>
+        </div>
+
+        {/* 오른쪽: 요약 정보 + 탐지 피드 */}
+        <div className="dashboard-right">
           {/* 요약 정보 */}
           <div className="summary-section">
             <div className="summary-grid">
@@ -131,20 +172,7 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* 탐지 이미지 뷰어 */}
-          <div className="detection-section">
-            <h2>탐지 결과</h2>
-            <DetectionViewer
-              imageUrl={`data:image/${detectionData.format};base64,...`}
-              detections={detectionData.detections}
-              imageWidth={detectionData.width}
-              imageHeight={detectionData.height}
-            />
-          </div>
-        </div>
-
-        {/* 오른쪽: 탐지 피드 */}
-        <div className="dashboard-right">
+          {/* 탐지 피드 */}
           <div className="list-section">
             <h2>탐지 피드</h2>
             {communicationMode === "api" &&
