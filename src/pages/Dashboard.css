@@ -50,6 +50,12 @@
 }
 
 .comm-btn.api {
+  background: #fef9c3;
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
+.comm-btn.ws {
   background: #dcfce7;
   border-color: #10b981;
   color: #059669;
@@ -59,6 +65,84 @@
   transform: scale(1.05);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
+
+/* WS 연결 상태 배지 */
+.ws-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1.5px solid;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  background: white;
+  white-space: nowrap;
+}
+
+.ws-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ws-dot-active {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* 프레임 카운터 */
+.frame-counter {
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1.5px solid #d1d5db;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
+/* WS 에러 배너 */
+.ws-error-banner {
+  background: #fef2f2;
+  border: 1.5px solid #fca5a5;
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  color: #b91c1c;
+  font-size: 14px;
+  font-weight: 500;
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* LIVE 배지 */
+.live-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  background: #10b981;
+  color: white;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  animation: live-pulse 2s ease-in-out infinite;
+  vertical-align: middle;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 
 .refresh-btn {
   padding: 10px 20px;

@@ -1,92 +1,104 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import DetectionViewer from "../components/DetectionViewer";
 import DetectionList from "../components/DetectionList";
-import { mockDetectionData } from "../api/mockData";
-import { getDetectionDataApi } from "../api/detectionApi";
+import { wsClient } from "../api/wsClient";
 import {
   formatDetectionData,
   getOverallRiskLevel,
 } from "../utils/riskCalculator";
 import "./Dashboard.css";
 
+const WS_STATUS_LABELS = {
+  disconnected: { text: "서버 연결 끊김", color: "#6b7280" },
+  connecting: { text: "서버 연결 중...", color: "#F59E0B" },
+  connected: { text: "서버 연결됨", color: "#10B981" },
+  error: { text: "서버 오류", color: "#EF4444" },
+};
+
 const Dashboard = () => {
   const [detectionData, setDetectionData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [communicationMode, setCommunicationMode] = useState("mock"); // "mock" or "api"
-  const [intervalId, setIntervalId] = useState(null);
+  const [wsStatus, setWsStatus] = useState("disconnected");
+  const [wsError, setWsError] = useState(null);
+  const [frameCount, setFrameCount] = useState(0);
+  
+  // NPU에서 데이터가 오고 있는지 확인하는 상태
+  const [npuActive, setNpuActive] = useState(false);
+  const npuTimerRef = useRef(null);
+
+  const makeEmptyFrame = () => ({
+    imageId: "",
+    filename: "",
+    width: 0,
+    height: 0,
+    format: "",
+    imageData: null,
+    createdAt: new Date(),
+    source: "npu",
+    tags: [],
+    note: "",
+    detections: [],
+  });
+
+  const applyRawFrame = useCallback((rawData) => {
+    if (!rawData) return;
+    const formatted = formatDetectionData(rawData);
+    if (formatted) {
+      setDetectionData(formatted);
+      setFrameCount((n) => n + 1);
+      
+      // 프레임이 들어오면 NPU 활성 상태로 전환하고 타이머 초기화
+      setNpuActive(true);
+      if (npuTimerRef.current) clearTimeout(npuTimerRef.current);
+      
+      // 2초 동안 새 프레임이 안 오면 NPU 신호 끊김으로 간주
+      npuTimerRef.current = setTimeout(() => {
+        setNpuActive(false);
+      }, 2000);
+    }
+  }, []);
+
+  const startWs = useCallback(() => {
+    setWsError(null);
+    wsClient.connect({
+      onFrame: (rawFrame) => {
+        applyRawFrame(rawFrame);
+      },
+      onStatusChange: (status) => {
+        console.log(`📡 WS 상태 변경: ${status}`);
+        setWsStatus(status);
+      },
+      onError: (err) => {
+        setWsError("WebSocket 연결 오류가 발생했습니다.");
+        console.error("WS 오류:", err);
+      },
+    });
+  }, [applyRawFrame]);
+
+  const stopWs = useCallback(() => {
+    wsClient.disconnect();
+    setWsStatus("disconnected");
+  }, []);
 
   useEffect(() => {
-    // Mock 데이터로 초기화
-    if (communicationMode === "mock") {
-      const formattedData = formatDetectionData(mockDetectionData);
-      setDetectionData(formattedData);
-
-      // 기존 interval 정리
-      if (intervalId) clearInterval(intervalId);
-      setIntervalId(null);
-    } else {
-      // API 모드: 데이터 초기화 (백엔드에서 받을 때까지 대기)
-      setDetectionData({
-        imageId: "",
-        filename: "",
-        width: 0,
-        height: 0,
-        format: "",
-        createdAt: new Date(),
-        source: "API",
-        tags: [],
-        note: "",
-        detections: [],
-      });
-
-      // API 모드: 주기적 GET 요청 시작 (1초마다 프레임 수신)
-      console.log("🔗 API 모드: 백엔드에서 프레임 수신 시작...");
-      const id = setInterval(() => {
-        fetchDetectionDataFromAPI();
-      }, 1000); // 1초마다 GET 요청
-
-      setIntervalId(id);
-    }
+    console.log("🟢 WebSocket 모드: 연결 시작");
+    setDetectionData(makeEmptyFrame());
+    startWs();
 
     return () => {
-      if (intervalId) clearInterval(intervalId);
+      stopWs();
     };
-  }, [communicationMode, intervalId]);
-
-  const fetchDetectionDataFromAPI = async () => {
-    try {
-      const result = await getDetectionDataApi();
-      if (result.success && result.data) {
-        const formattedData = formatDetectionData(result.data);
-        setDetectionData(formattedData);
-      }
-    } catch (error) {
-      console.error("API 요청 오류:", error);
-    }
-  };
+  }, [startWs, stopWs]);
 
   const handleRefresh = () => {
     setLoading(true);
     setTimeout(() => {
-      if (communicationMode === "mock") {
-        // Mock 모드: 새로운 timestamp로 업데이트
-        const updatedData = {
-          ...mockDetectionData,
-          created_at: new Date().toISOString(),
-        };
-        const formattedData = formatDetectionData(updatedData);
-        setDetectionData(formattedData);
-      } else {
-        // API 모드: 즉시 한 번 요청
-        console.log("🔄 수동 갱신: 백엔드에서 데이터를 받아오는 중...");
-        fetchDetectionDataFromAPI();
+      if (wsStatus !== "connected") {
+        stopWs();
+        startWs();
       }
       setLoading(false);
-    }, 500);
-  };
-
-  const toggleCommunicationMode = () => {
-    setCommunicationMode(communicationMode === "mock" ? "api" : "mock");
+    }, 400);
   };
 
   if (!detectionData) {
@@ -101,40 +113,66 @@ const Dashboard = () => {
   }
 
   const overallRisk = getOverallRiskLevel(detectionData.detections);
+  const wsStatusInfo = WS_STATUS_LABELS[wsStatus] || WS_STATUS_LABELS.disconnected;
+  const isWaiting = detectionData.detections.length === 0;
+
+  // 서버엔 연결되었으나 NPU 데이터가 없는 상태
+  const isServerConnectedButNoNpu = wsStatus === "connected" && !npuActive;
 
   return (
     <div className="dashboard">
-      {/* 헤더 */}
       <div className="dashboard-header">
         <div className="header-content">
           <h1>🛡️ Drone Guard - Edge 모니터링</h1>
           <p>실시간 드론 탐지 및 위험도 분석 시스템</p>
         </div>
         <div className="header-buttons">
-          <button
-            className={`comm-btn ${communicationMode}`}
-            onClick={toggleCommunicationMode}
-            title="통신 모드 전환"
+          <span
+            className="ws-status-badge"
+            style={{ 
+              borderColor: isServerConnectedButNoNpu ? "#F59E0B" : wsStatusInfo.color, 
+              color: isServerConnectedButNoNpu ? "#F59E0B" : wsStatusInfo.color 
+            }}
+            title={wsError || ""}
           >
-            {communicationMode === "mock" ? "🔴 통신없음" : "🟢 통신시작"}
-          </button>
+            <span
+              className={`ws-dot ${wsStatus === "connected" ? "ws-dot-active" : ""}`}
+              style={{ backgroundColor: isServerConnectedButNoNpu ? "#F59E0B" : wsStatusInfo.color }}
+            />
+            {isServerConnectedButNoNpu ? "서버 연결됨 (NPU 신호 없음)" : wsStatusInfo.text}
+          </span>
+
+          {wsStatus === "connected" && (
+            <span className="frame-counter">
+              수신 프레임: {frameCount}
+            </span>
+          )}
+
           <button
             className="refresh-btn"
             onClick={handleRefresh}
             disabled={loading}
           >
-            {loading ? "업데이트 중..." : "새로고침"}
+            {loading ? "처리 중..." : "재연결"}
           </button>
         </div>
       </div>
 
-      {/* 메인 컨테이너 - 2컬럼 레이아웃 */}
+      {wsError && (
+        <div className="ws-error-banner">
+          ⚠️ {wsError} &nbsp;—&nbsp; 자동 재연결 중...
+        </div>
+      )}
+
       <div className="dashboard-main">
-        {/* 왼쪽: 탐지 이미지 */}
         <div className="dashboard-left">
-          {/* 탐지 이미지 뷰어 */}
           <div className="detection-section">
-            <h2>탐지 결과</h2>
+            <h2>
+              탐지 결과
+              {wsStatus === "connected" && (
+                <span className="live-badge">● LIVE</span>
+              )}
+            </h2>
             <DetectionViewer
               imageData={detectionData.imageData || null}
               detections={detectionData.detections}
@@ -144,9 +182,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* 오른쪽: 요약 정보 + 탐지 피드 */}
         <div className="dashboard-right">
-          {/* 요약 정보 */}
           <div className="summary-section">
             <div className="summary-grid">
               <div className="summary-card">
@@ -161,25 +197,36 @@ const Dashboard = () => {
               </div>
               <div className="summary-card">
                 <span className="label">소스</span>
-                <span className="value">{detectionData.source}</span>
+                <span className="value">{detectionData.source || "-"}</span>
               </div>
               <div className="summary-card">
                 <span className="label">업데이트</span>
                 <span className="value">
-                  {detectionData.createdAt.toLocaleTimeString("ko-KR")}
+                  {detectionData.createdAt instanceof Date &&
+                  !isNaN(detectionData.createdAt)
+                    ? detectionData.createdAt.toLocaleTimeString("ko-KR")
+                    : "-"}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* 탐지 피드 */}
           <div className="list-section">
             <h2>탐지 피드</h2>
-            {communicationMode === "api" &&
-            detectionData.detections.length === 0 ? (
+            {isWaiting ? (
               <div className="api-waiting">
-                <p>🔗 백엔드와 연동 대기 중...</p>
-                <small>백엔드 서버에서 데이터를 받으면 표시됩니다.</small>
+                <p>
+                  {wsStatus === "connecting"
+                    ? "⏳ WebSocket 연결 중..."
+                    : wsStatus === "connected"
+                    ? "📡 프레임 수신 대기 중..."
+                    : "🔌 백엔드와 연동 대기 중..."}
+                </p>
+                <small>
+                  {wsStatus === "connected"
+                    ? "NPU에서 프레임이 도착하면 자동으로 표시됩니다."
+                    : "백엔드 WebSocket 서버에 연결 중입니다."}
+                </small>
               </div>
             ) : (
               <DetectionList detections={detectionData.detections} />

@@ -1,321 +1,165 @@
-# Drone Guard - Frontend
+﻿# Drone Guard - Frontend
 
-드론 탐지 및 위험도 분석을 위한 실시간 모니터링 웹 애플리케이션 (Sprint 1)
+드론 탐지 및 위험도 분석을 위한 실시간 모니터링 웹 애플리케이션
+
+## 시스템 아키텍처
+
+```text
+[NPU 단말기] --- (ws/ingest) ---> [FastAPI 백엔드] --- (ws/live) ---> [React 프론트엔드]
+ (데이터 전송)                       (브로드캐스트)                      (실시간 렌더링)
+```
+
+1. **NPU 단말기**: 드론 탐지 이미지와 Bounding Box 좌표, 신뢰도(`score`)를 바이너리(DPX1) 형식으로 백엔드에 전송합니다.
+2. **FastAPI 백엔드 (`server.py`)**: NPU에서 보낸 프레임을 파싱하여, 접속된 모든 웹 클라이언트에게 JSON 형태로 브로드캐스트합니다. (React 빌드 결과물 서빙 및 SSL 지원 포함)
+3. **React 프론트엔드 (`Dashboard`)**: 웹소켓을 통해 실시간 프레임을 받아 즉시 캔버스에 렌더링하고, 자체 로직으로 위험도를 평가하여 시각화합니다.
 
 ## 프로젝트 구조
 
-```
-src/
-├── api/                      # API 통신 관련
-│   ├── index.js             # 기본 API 함수 (GET, POST, PUT, DELETE)
-│   ├── detectionApi.js      # 드론 탐지 관련 API
-│   └── mockData.js          # Mock 테스트 데이터
-├── components/              # 재사용 가능한 컴포넌트
-│   ├── DetectionViewer.js   # 탐지 이미지 및 Bounding Box 표시
-│   ├── DetectionList.js     # 탐지 객체 리스트
-│   ├── DetectionViewer.css
-│   └── DetectionList.css
-├── pages/                   # 페이지 컴포넌트
-│   ├── Dashboard.js         # 메인 대시보드 페이지
-│   └── Dashboard.css
-├── utils/                   # 유틸리티 함수
-│   └── riskCalculator.js    # 위험도 계산 및 데이터 포맷팅
-└── App.js                   # 메인 애플리케이션
-```
-
-## 개발 환경 설정
-
-### 필수 요구사항
-
-- Node.js 14.0 이상
-- npm 6.0 이상
-
-### 설치
-
-```bash
-npm install
-```
-
-### 실행
-
-```bash
-npm start
+```text
+├── public/                  # React 정적 템플릿 및 PWA 매니페스트
+│   ├── index.html
+│   ├── manifest.json
+│   └── robots.txt
+├── src/                     # React 소스 코드
+│   ├── api/
+│   │   └── wsClient.js      # WebSocket 연결 및 메시지 처리 로직
+│   ├── components/          # 재사용 가능한 UI 컴포넌트
+│   │   ├── DetectionList.js
+│   │   ├── DetectionViewer.js
+│   │   └── RiskCard.js
+│   ├── pages/               # 페이지 단위 컴포넌트
+│   │   └── Dashboard.js
+│   ├── utils/
+│   │   └── riskCalculator.js # 위험도 계산 함수
+│   ├── App.js
+│   ├── App.css
+│   ├── index.js
+│   └── index.css
+├── build/                   # `npm run build` 후 생성되는 배포용 정적 파일
+│   ├── index.html
+│   ├── manifest.json
+│   └── static/
+├── server/                  # 백엔드 서버 및 WebSocket 중계 코드
+│   ├── server.py            # FastAPI 서버 진입점
+│   ├── cert.pem             # (선택) SSL/TLS 인증서
+│   ├── key.pem              # (선택) SSL/TLS 개인 키
+│   └── ...
+├── .env                     # 환경 변수 (React/백엔드 설정)
+├── package.json             # 프론트엔드 빌드 및 런타임 의존성
+└── README.md                # 프로젝트 문서
 ```
 
-브라우저에서 [http://localhost:3000](http://localhost:3000)으로 접속합니다.
+> 프론트엔드 개발 시 `src/` 폴더 안의 파일을 수정하고 `npm run build`를 실행하면 `build/`에 배포용 정적 파일이 생성됩니다. `server/server.py`는 이 `build/` 폴더를 서빙합니다.
 
-## API 명세
+## 통신 명세 (WebSocket API)
 
-### Base URL
+이 시스템은 NPU에서 데이터를 보내고 웹 클라이언트에서 수신하는 단방향 실시간 브로드캐스트를 기반으로 합니다.
 
-```
-http://localhost:8000/api
-```
-
-### 엔드포인트
-
-#### 1. 최신 탐지 데이터 조회
-
-```
-GET /detections/latest
-
-Response:
-{
-  "result": "ok",
-  "data": {
-    "image_id": "sample_0001",
-    "filename": "sample.jpg",
-    "width": 640,
-    "height": 640,
-    "format": "jpg",
-    "image_data": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
-    "created_at": "2026-05-14T09:47:58",
-    "source": "laptop",
+### 1. NPU -> 백엔드 (수신)
+- **Endpoint**: `ws://<서버IP>:8765/ws/ingest`
+- **프로토콜**: Binary 데이터 (DPX1 매직넘버 사용)
+- **JSON Header 예시**:
+  ```json
+  {
+    "frame_seq": 1234,
+    "image": { "w": 640, "h": 640, "size": 45000 },
     "detections": [
       {
-        "class": "drone",
-        "confidence": 0.97,
-        "bbox": {
-          "x1": 180,
-          "y1": 180,
-          "x2": 460,
-          "y2": 460
-        }
-      },
-      {
-        "class": "person",
-        "confidence": 0.85,
-        "bbox": {
-          "x1": 50,
-          "y1": 100,
-          "x2": 150,
-          "y2": 300
-        }
+        "class_name": "drone",
+        "score": 0.95,
+        "bbox": [180, 180, 460, 460]
       }
     ]
   }
-}
-```
+  ```
 
-#### 2. 특정 이미지 ID로 탐지 데이터 조회
-
-```
-GET /detections/{imageId}
-
-Response: 위와 동일
-```
-
-#### 3. 탐지 이력 조회 (페이지네이션)
-
-```
-GET /detections?page=1&limit=10
-
-Response:
-{
-  "result": "ok",
-  "data": {
-    "items": [...],
-    "total": 100,
-    "page": 1,
-    "limit": 10
+### 2. 백엔드 -> 프론트엔드 (브로드캐스트)
+- **Endpoint**: `ws://<서버IP>:8765/ws/live`
+- **프로토콜**: JSON Text
+- **Payload 예시**:
+  ```json
+  {
+    "type": "frame",
+    "frame_seq": 1234,
+    "ts": 1716000000.0,
+    "image": "data:image/jpeg;base64,...",
+    "image_size": [640, 640],
+    "detections": [
+      {
+        "class_name": "drone",
+        "score": 0.95,
+        "bbox": [180, 180, 460, 460]
+      }
+    ]
   }
-}
+  ```
+*프론트엔드의 `wsClient.js`는 위 페이로드를 받아 객체 형태로 자동 정규화(`bbox` 배열 -> `{x1, y1, x2, y2}`) 및 위험도 평가 로직을 수행합니다.*
+
+## 개발 및 실행 가이드
+
+이 프로젝트는 웹 프론트엔드와 백엔드가 통합된 형태로 구동됩니다.
+
+### 1. 프론트엔드 빌드 (필수)
+FastAPI 백엔드가 프론트엔드 화면을 서빙하기 때문에, 코드를 수정한 후에는 반드시 빌드를 먼저 진행해야 합니다.
+
+```bash
+# 의존성 설치
+npm install
+
+# 프로덕션 빌드 생성
+npm run build
 ```
 
-#### 4. 위험도 분석
+### 2. 백엔드 실행
+Python 가상 환경에 필요한 라이브러리를 설치하고 `server.py`를 실행합니다.
 
-```
-POST /detections/risk-analysis
+```bash
+# 백엔드 의존성 설치
+pip install fastapi "uvicorn[standard]" websockets
 
-Request:
-{
-  "detections": [
-    {
-      "class": "drone",
-      "confidence": 0.95,
-      "bbox": { ... }
-    }
-  ]
-}
-
-Response:
-{
-  "result": "ok",
-  "data": {
-    "overall_risk": "HIGH",
-    "confidence": 0.95,
-    "recommendation": "긴급 조치 필요"
-  }
-}
+# 백엔드 실행
+python .\server\server.py
 ```
 
-## 위험도 레벨 기준
+### 3. 대시보드 접속
+서버 실행 후 터미널에 표시되는 주소로 접속합니다.
+* 로컬 접속: `http://localhost:8765/` (인증서 설정에 따라 `https://` 일 수 있음)
+* 외부 단말 접속: 동일 네트워크 상에서 `http://<서버IP>:8765/` 로 접속
 
-| 레벨   | 신뢰도    | 색상    | 설명                  |
-| ------ | --------- | ------- | --------------------- |
-| HIGH   | ≥ 0.9     | 🔴 빨강 | 높음 - 긴급 조치 필요 |
-| MEDIUM | 0.7 ~ 0.9 | 🟠 주황 | 중간 - 주의 필요      |
-| LOW    | < 0.7     | 🟢 초록 | 낮음 - 정상           |
-| SAFE   | 탐지 없음 | 🟢 초록 | 안전                  |
+> **참고**: NPU 장비는 `ws://<서버IP>:8765/ws/ingest` 로 데이터를 전송해야 합니다.
 
-## 환경 변수
-
-`.env` 파일에서 다음 변수를 설정할 수 있습니다:
+## 환경 변수 (.env)
 
 ```env
-# API 서버 URL
-REACT_APP_API_URL=http://localhost:8000
+# React 개발 서버 바인딩 (로컬 개발용)
+HOST=0.0.0.0
+
+# WebSocket 포트 및 API 주소 (server.py와 일치해야 함)
+REACT_APP_API_URL=http://localhost:8765
+REACT_APP_WS_PORT=8765
 ```
 
 ## 주요 기능
 
-### 통신 모드
+### 🟢 실시간 WebSocket 통신 (단일 모드)
+* 기존 Mock 및 REST API 폴링 방식이 제거되고 오직 실시간 통신으로 통합되었습니다.
+* 접속 시 IP(호스트네임)를 자동 감지하여 오류 없이 서버에 연결됩니다.
+* 서버 연결은 유지되고 있으나 NPU 데이터가 2초 이상 수신되지 않으면 상태 배지가 **"서버 연결됨 (NPU 신호 없음)"**으로 자동 전환됩니다.
 
-**🔴 Mock 모드 (통신없음)**
+### 🛡️ 드론 탐지 및 위험도 시각화
+* **실시간 탐지 렌더링**: 원본 이미지의 비율을 유지하며 컨테이너 크기에 맞춰 동적으로 Bounding Box를 렌더링합니다.
+* **위험도 자체 판단**: NPU에서 수신한 Bounding Box 면적과 신뢰도(Confidence) 데이터를 활용하여 프론트엔드(`riskCalculator.js`)에서 직접 3단계 위험도(HIGH, MEDIUM, LOW)를 평가합니다.
 
-- Mock 데이터 사용 (샘플 탐지 데이터)
-- 수동 갱신 (새로고침 버튼 클릭)
-- API 서버 없이 독립적으로 테스트 가능
-
-**🟢 API 모드 (통신시작)**
-
-- 백엔드 서버에서 실시간 프레임 수신
-- 1초마다 자동으로 GET 요청 (프레임 단위)
-- 탐지 데이터 없을 때 "백엔드와 연동 대기 중..." 표시
-- 백엔드 서버와 완벽 연동
-
-### Sprint 1 - 드론 탐지 및 위험도 시각화
-
-✅ **실시간 탐지 데이터 표시**
-
-- EO-IR Fusion 모델의 실시간 탐지 결과 표시
-- Canvas 기반 Bounding Box 시각화
-- 탐지 객체별 신뢰도(%) 및 위험도 레벨 표시
-- 원본 이미지 좌표 정보 표시
-
-✅ **위험도 단계 제공**
-
-- 신뢰도(Confidence) 기반 위험도 계산
-- 3단계 위험도 레벨 (HIGH, MEDIUM, LOW)
-- 색상 코드로 직관적 표현 (빨강/주황/초록)
-- 위험도별 경고 시스템
-
-✅ **이미지 스케일링**
-
-- 원본 이미지 비율 유지 (640x640 → 컨테이너에 맞춰 동적 스케일)
-- Bounding Box 좌표 자동 스케일링
-- 반응형 레이아웃 (2컬럼: 이미지/요약정보)
-
-✅ **상세 정보 제공**
-
-- 현재 위험도 레벨
-- 탐지된 객체 수
-- 데이터 소스 및 업데이트 시간
-- 탐지 피드 (객체별 신뢰도 테이블)
-
-✅ **자동 갱신**
-
-- Mock 모드: 수동 갱신 (새로고침 버튼)
-- API 모드: 1초마다 자동 GET 요청 (프레임 단위)
-- 통신 모드 실시간 전환 가능
-
-## 주요 컴포넌트
-
-### DetectionViewer
-
-Canvas를 이용한 실시간 이미지 및 Bounding Box 렌더링
-
-- 컨테이너 크기 감지 (getBoundingClientRect)
-- 비율 유지하며 동적 스케일링
-- JSON 기반 Bounding Box 좌표 렌더링
-
-### DetectionList
-
-탐지된 객체들의 테이블 형식 표시
-
-- 클래스, 신뢰도, 위험도 3컬럼
-- 스크롤 가능한 리스트
-- 위험도별 컬러 배지
-
-### Dashboard
-
-메인 페이지 레이아웃 및 상태 관리
-
-- Mock/API 모드 토글
-- 실시간 데이터 폴링 (1초 간격)
-- 2컬럼 반응형 레이아웃
-
-## 빌드
-
-```bash
-npm run build
-```
-
-## 사용 예제
-
-### Mock 모드로 테스트 (백엔드 없이)
-
-```bash
-npm start
-# 브라우저에서 http://localhost:3000 접속
-# 🔴 통신없음 버튼 클릭하여 Mock 데이터 확인
-# 새로고침 버튼으로 수동 갱신
-```
-
-### API 모드로 백엔드와 연동
-
-```bash
-# 1. .env 파일 설정
-REACT_APP_API_URL=http://localhost:8000
-
-# 2. npm start로 프론트엔드 실행
-npm start
-
-# 3. 브라우저에서 🟢 통신시작 버튼 클릭
-# 4. 백엔드 서버에서 GET /detections/latest 엔드포인트 제공 시
-#    자동으로 1초마다 폴링하여 실시간 데이터 표시
-```
+### 🔒 외부 단말기 연동 및 SSL 지원
+* 백엔드 폴더(`server/`) 내에 `cert.pem`, `key.pem` 파일이 존재할 경우, 자동으로 WSS(SSL) 보안 서버로 열립니다. 이를 통해 외부 모바일 기기나 다른 PC에서의 원활한 접속이 가능합니다.
 
 ## 개발 팁
 
-### Console 로그 확인
-
-- 컨테이너 크기 감지 로그
-- 원본/스케일된 이미지 크기 로그
-- 스케일 비율 로그
-
-### Mock 데이터 수정
-
-`src/api/mockData.js`의 `mockDetectionData` 객체 수정으로 테스트 데이터 변경 가능
-
-### 이미지 최대 높이 조정
-
-`src/components/DetectionViewer.css`의 `max-height: 750px` 값 조정
+* **React 코드 수정 시**: 코드를 변경하고 `npm run build`를 실행한 후, 브라우저를 새로고침(F5)하면 변경 사항이 즉시 반영됩니다. 백엔드(`server.py`)는 자동으로 빌드 폴더를 감지하므로 껐다 켤 필요가 없습니다.
+* **NPU 없이 UI 테스트를 원할 경우**: `src/api/wsClient.js`의 내부 로직을 수정하여 로컬 루프백 테스트를 진행할 수 있습니다.
 
 ## 라이선스
-
 MIT
 
 ## 연락처
-
 Drone Guard Edge Team
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)

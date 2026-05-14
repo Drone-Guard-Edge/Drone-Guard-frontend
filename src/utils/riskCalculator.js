@@ -1,4 +1,4 @@
-// 위험도 레벨 계산
+// 위험도 레벨 계산 (옵션 A: confidence 기반 — README 스펙 준수)
 export const calculateRiskLevel = (confidence) => {
   if (confidence >= 0.9) {
     return {
@@ -26,18 +26,50 @@ export const confidenceToPercent = (confidence) => {
   return Math.round(confidence * 100);
 };
 
+/**
+ * bbox 정규화: 배열([x1,y1,x2,y2]) 또는 객체({x1,y1,x2,y2}) 모두 허용
+ * todo.md 시나리오 3: bbox 포맷 불일치 입력 자동 처리
+ */
+export const normalizeBbox = (bbox) => {
+  if (!bbox) return { x1: 0, y1: 0, x2: 0, y2: 0, width: 0, height: 0 };
+  if (Array.isArray(bbox)) {
+    const [x1, y1, x2, y2] = bbox;
+    return { x1, y1, x2, y2, width: x2 - x1, height: y2 - y1 };
+  }
+  return {
+    x1: bbox.x1,
+    y1: bbox.y1,
+    x2: bbox.x2,
+    y2: bbox.y2,
+    width: (bbox.x2 || 0) - (bbox.x1 || 0),
+    height: (bbox.y2 || 0) - (bbox.y1 || 0),
+  };
+};
+
+/**
+ * detection 단건 정규화
+ * - bbox 배열/객체 통일
+ * - score 필드를 confidence로 통일 (server.py 호환)
+ */
+export const normalizeDetection = (detection) => {
+  const confidence = detection.confidence ?? detection.score ?? 0;
+  return {
+    class: detection.class || detection.label || "unknown",
+    confidence,
+    bbox: normalizeBbox(detection.bbox),
+  };
+};
+
 // 탐지 데이터 포맷팅
 export const formatDetectionData = (rawData) => {
   if (!rawData) return null;
 
-  // 이미지 데이터가 있으면 base64로 변환
+  // 이미지 데이터가 있으면 base64 URI로 변환
   let imageData = null;
   if (rawData.image_data) {
-    // 이미 base64 형식이면 그대로 사용
     if (rawData.image_data.startsWith("data:image")) {
       imageData = rawData.image_data;
     } else {
-      // base64 문자열이면 data URI로 변환
       imageData = `data:image/${rawData.format || "jpg"};base64,${rawData.image_data}`;
     }
   }
@@ -48,26 +80,22 @@ export const formatDetectionData = (rawData) => {
     width: rawData.width,
     height: rawData.height,
     format: rawData.format,
-    imageData: imageData, // 이미지 데이터 추가
+    imageData: imageData,
     createdAt: new Date(rawData.created_at),
     source: rawData.source,
     tags: rawData.tags || [],
     note: rawData.note,
-    detections: (rawData.detections || []).map((detection) => ({
-      id: `${detection.class}_${Math.random()}`,
-      class: detection.class,
-      confidence: detection.confidence,
-      confidencePercent: confidenceToPercent(detection.confidence),
-      riskLevel: calculateRiskLevel(detection.confidence),
-      bbox: {
-        x1: detection.bbox.x1,
-        y1: detection.bbox.y1,
-        x2: detection.bbox.x2,
-        y2: detection.bbox.y2,
-        width: detection.bbox.x2 - detection.bbox.x1,
-        height: detection.bbox.y2 - detection.bbox.y1,
-      },
-    })),
+    detections: (rawData.detections || []).map((detection) => {
+      const normalized = normalizeDetection(detection);
+      return {
+        id: `${normalized.class}_${Math.random()}`,
+        class: normalized.class,
+        confidence: normalized.confidence,
+        confidencePercent: confidenceToPercent(normalized.confidence),
+        riskLevel: calculateRiskLevel(normalized.confidence),
+        bbox: normalized.bbox,
+      };
+    }),
   };
 };
 
