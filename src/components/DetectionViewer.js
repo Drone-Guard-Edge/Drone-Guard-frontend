@@ -108,7 +108,7 @@ const DetectionViewer = ({
           // 라벨 배경
           ctx.fillStyle = riskLevel.color;
           const confidencePercent = (confidence * 100).toFixed(1);
-          const labelText = `${className} ${confidencePercent}% [${riskLevel.label}]`;
+          const labelText = `${className} ${confidencePercent}%`;
           const textMetrics = ctx.measureText(labelText);
           const labelPadding = 6;
           const labelHeight = 20;
@@ -128,15 +128,6 @@ const DetectionViewer = ({
             scaledX1 + labelPadding,
             Math.max(14, scaledY1 - 4),
           );
-
-          // 좌표 정보 (왼쪽 아래)
-          ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-          ctx.font = "9px Arial";
-          const coordText = `(${bbox.x1},${bbox.y1})-(${bbox.x2},${bbox.y2})`;
-          const coordMetrics = ctx.measureText(coordText);
-          ctx.fillRect(scaledX1, scaledY2 + 2, coordMetrics.width + 4, 12);
-          ctx.fillStyle = "#00FF00";
-          ctx.fillText(coordText, scaledX1 + 2, scaledY2 + 11);
         });
       };
 
