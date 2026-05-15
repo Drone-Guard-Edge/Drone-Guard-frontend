@@ -2,14 +2,6 @@ import React from "react";
 import "./DetectionList.css";
 
 const DetectionList = ({ detections = [] }) => {
-  if (!detections || detections.length === 0) {
-    return (
-      <div className="detection-list empty">
-        <p>탐지된 객체가 없습니다.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="detection-list">
       <div className="detection-list-header">

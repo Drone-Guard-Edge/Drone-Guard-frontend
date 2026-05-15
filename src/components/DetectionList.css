@@ -4,16 +4,15 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.detection-list.empty {
+.empty-message {
   display: flex;
   align-items: center;
   justify-content: center;
+  height: 100%;
   min-height: 200px;
-  background: #f9fafb;
-  border: 1px dashed #e5e7eb;
 }
 
-.detection-list.empty p {
+.empty-message p {
   color: #9ca3af;
   font-size: 14px;
 }
@@ -33,7 +32,7 @@
 }
 
 .detection-list-body {
-  max-height: 400px;
+  height: 300px; /* 고정 높이 지정 */
   overflow-y: auto;
 }
 

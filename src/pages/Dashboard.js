@@ -6,6 +6,7 @@ import {
   formatDetectionData,
   getOverallRiskLevel,
 } from "../utils/riskCalculator";
+import { DetectionTracker } from "../utils/detectionTracker";
 import "./Dashboard.css";
 
 const WS_STATUS_LABELS = {
@@ -27,6 +28,7 @@ const Dashboard = () => {
   const npuTimerRef = useRef(null);
   const npuStartTimeRef = useRef(null);
   const npuFrameCountRef = useRef(0);
+  const trackerRef = useRef(new DetectionTracker());
 
   const makeEmptyFrame = () => ({
     imageId: "",
@@ -46,6 +48,8 @@ const Dashboard = () => {
     if (!rawData) return;
     const formatted = formatDetectionData(rawData);
     if (formatted) {
+      // Tracker를 통해 탐지 결과 스무딩(EMA) 및 프레임 유지(Patience) 적용
+      formatted.detections = trackerRef.current.update(formatted.detections);
       setDetectionData(formatted);
       
       const now = Date.now();
@@ -71,6 +75,8 @@ const Dashboard = () => {
         npuStartTimeRef.current = null;
         npuFrameCountRef.current = 0;
         setCurrentFps(0);
+        trackerRef.current.reset(); // NPU 끊김 시 트래커 리셋
+        setDetectionData(makeEmptyFrame()); // 이미지 및 모든 탐지 결과 완전히 초기화
       }, 2000);
     }
   }, []);
@@ -99,6 +105,8 @@ const Dashboard = () => {
     npuStartTimeRef.current = null;
     npuFrameCountRef.current = 0;
     setCurrentFps(0);
+    trackerRef.current.reset();
+    setDetectionData(makeEmptyFrame());
   }, []);
 
   useEffect(() => {
