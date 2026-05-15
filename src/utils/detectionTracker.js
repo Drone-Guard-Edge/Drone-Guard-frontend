@@ -23,7 +23,7 @@ export function calculateIoU(boxA, boxB) {
 export class DetectionTracker {
   constructor(options = {}) {
     this.posAlpha = options.posAlpha || 0.8;   // 위치(BBox) EMA 가중치 (높을수록 덜 뒤처짐)
-    this.confAlpha = options.confAlpha || 0.4; // 신뢰도(Confidence) EMA 가중치 (낮을수록 점수가 부드럽게 변함)
+    this.confUpdateInterval = options.confUpdateInterval || 500; // 신뢰도 갱신 주기 (ms)
     this.iouThreshold = options.iouThreshold || 0.05; // 빠른 이동을 고려해 임계값을 아주 낮게 설정
     this.maxLostFrames = options.maxLostFrames || 1;  // 잔상이 오래 남지 않도록 1프레임만 유지
     this.activeTracks = [];
@@ -34,6 +34,7 @@ export class DetectionTracker {
     const updatedTracks = [];
     // 복사본을 만들어 매칭된 항목을 제거해 나갈 배열
     const unmatchedDetections = [...currentDetections];
+    const now = Date.now();
 
     this.activeTracks.forEach((track) => {
       let bestMatchIdx = -1;
@@ -64,11 +65,20 @@ export class DetectionTracker {
         track.bbox.width = track.bbox.x2 - track.bbox.x1;
         track.bbox.height = track.bbox.y2 - track.bbox.y1;
 
-        track.confidence =
-          this.confAlpha * matchedDet.confidence +
-          (1 - this.confAlpha) * track.confidence;
-        track.confidencePercent = confidenceToPercent(track.confidence);
-        track.riskLevel = calculateRiskLevel(track.confidence);
+        // 신뢰도 주기적 평균 업데이트
+        track.confidenceBuffer.push(matchedDet.confidence);
+
+        if (now - track.lastConfUpdateTime >= this.confUpdateInterval) {
+          const sum = track.confidenceBuffer.reduce((a, b) => a + b, 0);
+          const avg = sum / track.confidenceBuffer.length;
+
+          track.confidence = avg;
+          track.confidencePercent = confidenceToPercent(avg);
+          track.riskLevel = calculateRiskLevel(avg);
+
+          track.confidenceBuffer = []; // 평균 계산 후 버퍼 초기화
+          track.lastConfUpdateTime = now;
+        }
 
         track.lostFrames = 0; // 매칭되었으므로 누락 수치 초기화
         updatedTracks.push(track);
@@ -94,6 +104,9 @@ export class DetectionTracker {
         riskLevel: det.riskLevel,
         bbox: { ...det.bbox },
         lostFrames: 0,
+        // Confidence 평균 계산용 상태
+        confidenceBuffer: [det.confidence],
+        lastConfUpdateTime: now,
       });
     });
 
