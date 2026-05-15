@@ -20,11 +20,13 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(false);
   const [wsStatus, setWsStatus] = useState("disconnected");
   const [wsError, setWsError] = useState(null);
-  const [frameCount, setFrameCount] = useState(0);
+  const [currentFps, setCurrentFps] = useState(0);
   
   // NPU에서 데이터가 오고 있는지 확인하는 상태
   const [npuActive, setNpuActive] = useState(false);
   const npuTimerRef = useRef(null);
+  const npuStartTimeRef = useRef(null);
+  const npuFrameCountRef = useRef(0);
 
   const makeEmptyFrame = () => ({
     imageId: "",
@@ -45,8 +47,20 @@ const Dashboard = () => {
     const formatted = formatDetectionData(rawData);
     if (formatted) {
       setDetectionData(formatted);
-      setFrameCount((n) => n + 1);
       
+      const now = Date.now();
+      if (!npuStartTimeRef.current) {
+        npuStartTimeRef.current = now;
+        npuFrameCountRef.current = 1;
+        setCurrentFps(0);
+      } else {
+        npuFrameCountRef.current += 1;
+        const elapsed = (now - npuStartTimeRef.current) / 1000;
+        if (elapsed > 0) {
+          setCurrentFps((npuFrameCountRef.current / elapsed).toFixed(1));
+        }
+      }
+
       // 프레임이 들어오면 NPU 활성 상태로 전환하고 타이머 초기화
       setNpuActive(true);
       if (npuTimerRef.current) clearTimeout(npuTimerRef.current);
@@ -54,6 +68,9 @@ const Dashboard = () => {
       // 2초 동안 새 프레임이 안 오면 NPU 신호 끊김으로 간주
       npuTimerRef.current = setTimeout(() => {
         setNpuActive(false);
+        npuStartTimeRef.current = null;
+        npuFrameCountRef.current = 0;
+        setCurrentFps(0);
       }, 2000);
     }
   }, []);
@@ -78,6 +95,10 @@ const Dashboard = () => {
   const stopWs = useCallback(() => {
     wsClient.disconnect();
     setWsStatus("disconnected");
+    setNpuActive(false);
+    npuStartTimeRef.current = null;
+    npuFrameCountRef.current = 0;
+    setCurrentFps(0);
   }, []);
 
   useEffect(() => {
@@ -114,7 +135,7 @@ const Dashboard = () => {
 
   const overallRisk = getOverallRiskLevel(detectionData.detections);
   const wsStatusInfo = WS_STATUS_LABELS[wsStatus] || WS_STATUS_LABELS.disconnected;
-  const isWaiting = detectionData.detections.length === 0;
+  const isWaiting = wsStatus !== "connected" || !npuActive;
 
   // 서버엔 연결되었으나 NPU 데이터가 없는 상태
   const isServerConnectedButNoNpu = wsStatus === "connected" && !npuActive;
@@ -144,7 +165,7 @@ const Dashboard = () => {
 
           {wsStatus === "connected" && (
             <span className="frame-counter">
-              수신 프레임: {frameCount}
+              FPS: {currentFps} | 프레임: {npuFrameCountRef.current}
             </span>
           )}
 
