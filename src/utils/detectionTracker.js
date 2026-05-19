@@ -22,10 +22,10 @@ export function calculateIoU(boxA, boxB) {
 
 export class DetectionTracker {
   constructor(options = {}) {
-    this.posAlpha = options.posAlpha || 0.8;   // 위치(BBox) EMA 가중치 (높을수록 덜 뒤처짐)
-    this.confUpdateInterval = options.confUpdateInterval || 500; // 신뢰도 갱신 주기 (ms)
-    this.iouThreshold = options.iouThreshold || 0.05; // 빠른 이동을 고려해 임계값을 아주 낮게 설정
-    this.maxLostFrames = options.maxLostFrames || 1;  // 잔상이 오래 남지 않도록 1프레임만 유지
+    this.posAlpha = options.posAlpha !== undefined ? options.posAlpha : 1.0;
+    this.confUpdateInterval = options.confUpdateInterval || 500;
+    this.iouThreshold = options.iouThreshold || 0.05;
+    this.maxLostFrames = options.maxLostFrames !== undefined ? options.maxLostFrames : 0;
     this.activeTracks = [];
     this.trackIdCounter = 0;
   }
