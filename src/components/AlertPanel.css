@@ -1,0 +1,194 @@
+/* AlertPanel.css  –  US-07/08 위험도별 알림 스타일 */
+
+/* ── 패널 전체 ─────────────────────────────────────────── */
+.alert-panel {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 160px);
+  position: sticky;
+  top: 20px;
+}
+
+/* 알림없을 때 좌측 컨테이너 placeholder */
+.alert-panel-empty {
+  background: rgba(255, 255, 255, 0.15);
+  border: 2px dashed rgba(255, 255, 255, 0.35);
+  border-radius: 12px;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  padding: 20px;
+  line-height: 1.6;
+}
+
+/* ── 헤더 ──────────────────────────────────────────────── */
+.alert-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.alert-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.alert-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: #EF4444;
+  color: white;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.alert-clear-btn {
+  font-size: 11px;
+  color: #6b7280;
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.alert-clear-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* ── 알림 목록 ─────────────────────────────────────────── */
+.alert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ── 개별 알림 ─────────────────────────────────────────── */
+.alert-item {
+  display: flex;
+  align-items: stretch;
+  border-left: 4px solid transparent;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 0;
+  transition: opacity 0.3s ease;
+  position: relative;
+}
+
+.alert-item:last-child {
+  border-bottom: none;
+}
+
+/* 좌측 레벨 표시바 (US-07 AC-2: 색상으로 위험도 구분) */
+.alert-level-bar {
+  width: 4px;
+  flex-shrink: 0;
+  border-radius: 0;
+}
+
+.alert-content {
+  flex: 1;
+  padding: 10px 12px;
+}
+
+.alert-top-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.alert-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.alert-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+
+.alert-time {
+  font-size: 11px;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.alert-dismiss-btn {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color 0.2s;
+  flex-shrink: 0;
+}
+
+.alert-dismiss-btn:hover {
+  color: #374151;
+}
+
+.alert-message {
+  margin: 0 0 2px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.4;
+}
+
+.alert-detail {
+  margin: 0;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+/* ── US-07 AC-2: 위험도별 강조 애니메이션 ──────────────── */
+
+/* HIGH: 깜빡임 (가장 강한 강조) */
+.alert-item--blink {
+  animation: alert-blink 1.2s ease-in-out 3;
+}
+
+@keyframes alert-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+/* MEDIUM: 맥동 */
+.alert-item--pulse {
+  animation: alert-pulse 2s ease-in-out infinite;
+}
+
+@keyframes alert-pulse {
+  0%, 100% { box-shadow: none; }
+  50%       { box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.25); }
+}

@@ -4,10 +4,13 @@ import DetectionList from "../components/DetectionList";
 import { wsClient } from "../api/wsClient";
 import {
   formatDetectionData,
-  getOverallRiskLevel,
 } from "../utils/riskCalculator";
 import { DetectionTracker } from "../utils/detectionTracker";
 import "./Dashboard.css";
+
+import AlertPanel from "../components/AlertPanel";
+import { evaluateDanger, isDangerTransition, buildDangerMessage } from "../utils/dangerDetector";
+import { alertManager } from "../utils/alertManager";
 
 const WS_STATUS_LABELS = {
   disconnected: { text: "서버 연결 끊김", color: "#6b7280" },
@@ -30,6 +33,26 @@ const Dashboard = () => {
   const npuFrameCountRef = useRef(0);
   const trackerRef = useRef(new DetectionTracker());
 
+  // US-05: 현재 위험 판단 결과
+  const [dangerInfo, setDangerInfo] = useState({
+    level: "SAFE", color: "#10B981", label: "안전",
+    isDanger: false, reason: "", triggerCount: 0, maxConfidence: 0,
+  });
+  // 이전 위험 레벨 추적 (US-08 상태 변화 감지용)
+  const prevDangerLevelRef = useRef("SAFE");
+
+  // US-07/08: 알림 목록
+  const [alerts, setAlerts] = useState([]);
+
+  // AlertManager 리스너 등록 (마운트 1회)
+  useEffect(() => {
+    alertManager.onAlertsChange = setAlerts;
+    return () => {
+      alertManager.onAlertsChange = null;
+      alertManager.dismissAll();
+    };
+  }, []);
+
   const makeEmptyFrame = () => ({
     imageId: "",
     filename: "",
@@ -51,6 +74,19 @@ const Dashboard = () => {
       // Tracker를 통해 탐지 결과 스무딩(EMA) 및 프레임 유지(Patience) 적용
       formatted.detections = trackerRef.current.update(formatted.detections);
       setDetectionData(formatted);
+
+      const danger = evaluateDanger(formatted.detections);
+      setDangerInfo(danger);
+      
+      // ── US-05 AC-2 / US-07 AC-3: 위험 전환 시 즉시 알림 ──
+      if (isDangerTransition(prevDangerLevelRef.current, danger.level)) {
+        const msg = buildDangerMessage(danger);
+        if (msg) console.warn("[US-05]", msg); // 콘솔에도 경고 기록
+      }
+      prevDangerLevelRef.current = danger.level;
+      
+      // ── US-07 / US-08: 알림 매니저에 전달 (중복 방지 내장) ─
+      alertManager.push(danger);
       
       const now = Date.now();
       if (!npuStartTimeRef.current) {
@@ -141,7 +177,6 @@ const Dashboard = () => {
     );
   }
 
-  const overallRisk = getOverallRiskLevel(detectionData.detections);
   const wsStatusInfo = WS_STATUS_LABELS[wsStatus] || WS_STATUS_LABELS.disconnected;
   const isWaiting = wsStatus !== "connected" || !npuActive;
 
@@ -194,6 +229,16 @@ const Dashboard = () => {
       )}
 
       <div className="dashboard-main">
+        {/* 좌측: 알림 패널 */}
+        <div className="dashboard-alerts">
+          <AlertPanel
+            alerts={alerts}
+            onDismiss={(id) => alertManager.dismiss(id)}
+            onDismissAll={() => alertManager.dismissAll()}
+          />
+        </div>
+
+        {/* 중앙: 탐지 뷰어 */}
         <div className="dashboard-left">
           <div className="detection-section">
             <h2>
@@ -211,13 +256,14 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* 우측: 요약 + 탐지 피드 */}
         <div className="dashboard-right">
           <div className="summary-section">
             <div className="summary-grid">
               <div className="summary-card">
                 <span className="label">현재 위험도</span>
-                <span className="value" style={{ color: overallRisk.color }}>
-                  {overallRisk.label}
+                <span className="value" style={{ color: dangerInfo.color }}>
+                  {dangerInfo.label}
                 </span>
               </div>
               <div className="summary-card">

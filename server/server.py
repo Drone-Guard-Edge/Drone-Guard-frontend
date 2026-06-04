@@ -10,6 +10,7 @@
 import asyncio
 import base64
 import json
+import os
 import struct
 import time
 from contextlib import asynccontextmanager
@@ -20,6 +21,19 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+from logger import (
+    setup_logging,
+    get_logger,
+    log_server_start,
+    log_server_stop,
+    log_frame_received,
+    log_client_connect,
+    log_client_disconnect,
+    log_danger_detected,
+    log_parse_error,
+    log_exception,
+)
 
 # ═══════════════════════════════════════════════════
 # 설정 (필요시 여기 직접 수정)
@@ -95,9 +109,15 @@ class Hub:
 # ═══════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 로거 초기화 (US-12 AC-2: 기본 로그 기록)
+    logger = setup_logging()
+    app.state.logger = logger
     app.state.hub = Hub()
+ 
+    log_server_start(logger, host="0.0.0.0", port=int(os.environ.get("REACT_APP_WS_PORT", 8765)))
     print("[server] up")
     yield
+    log_server_stop(logger)
     print("[server] down")
 
 
@@ -116,12 +136,18 @@ react_build_dir = Path(__file__).parent.parent / "build"
 
 @app.get("/health")
 async def health():
-    return {"ok": True, **app.state.hub.stats}
+    from logger import LOG_DIR, LOG_FILENAME
+    return {
+        "ok": True,
+        **app.state.hub.stats,
+        "log_file": str(LOG_DIR / LOG_FILENAME),  # US-12: 로그 파일 경로 노출
+    }
 
 
 # ─── NPU → Server (바이너리) ────────────────────────
 @app.websocket("/ws/ingest")
 async def ws_ingest(ws: WebSocket):
+    logger = get_logger("droneguard.ingest")
     await ws.accept()
     hub: Hub = ws.app.state.hub
 
@@ -143,7 +169,7 @@ async def ws_ingest(ws: WebSocket):
         "server_time_ns": int(time.time() * 1e9),
         "server_version": "1.0.0",
     }))
-    print(f"[ingest] connected: {client_id} ({session_id})")
+    log_client_connect(logger, addr=client_id, role="ingest")
 
     # 프레임 수신 루프
     try:
@@ -153,7 +179,7 @@ async def ws_ingest(ws: WebSocket):
                 header, jpeg = parse_frame_packet(data)
             except ProtocolError as e:
                 hub.stats["parse_errors"] += 1
-                print(f"[ingest] parse error: {e}")
+                log_parse_error(logger, e)   # US-12 AC-1: 오류 기록 후 계속 실행
                 continue
 
             hub.stats["frames_received"] += 1
@@ -167,18 +193,25 @@ async def ws_ingest(ws: WebSocket):
                 "image_size": [header["image"]["w"], header["image"]["h"]],
                 "detections": header.get("detections", []),
             })
+            log_frame_received(
+                logger,
+                frame_seq=header.get("frame_seq", 0),
+                client_id=client_id,
+                detection_count=len(header.get("detections", [])),
+            )
     except WebSocketDisconnect:
-        print(f"[ingest] disconnected: {client_id}")
+        log_client_disconnect(logger, addr=client_id, role="ingest")
 
 
 # ─── Server → Web (브로드캐스트) ─────────────────────
 @app.websocket("/ws/live")
 async def ws_live(ws: WebSocket):
+    logger = get_logger("droneguard.live")
     await ws.accept()
     hub: Hub = ws.app.state.hub
     q = await hub.subscribe()
     addr = ws.client.host if ws.client else "?"
-    print(f"[live] subscriber: {addr} (total={len(hub.subscribers)})")
+    log_client_connect(logger, addr=addr, role="subscriber")
 
     try:
         await ws.send_text(json.dumps({"type": "hello", "server_version": "1.0.0"}))
@@ -189,7 +222,7 @@ async def ws_live(ws: WebSocket):
         pass
     finally:
         await hub.unsubscribe(q)
-        print(f"[live] gone: {addr}")
+        log_client_disconnect(logger, addr=addr, role="subscriber")
 
 # ─── React Frontend 정적 파일 서빙 (항상 맨 아래에 위치) ──
 if react_build_dir.exists():
@@ -204,7 +237,6 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    import os
     from pathlib import Path
 
     # .env 파일이 있다면 포트 설정을 가져오기 위해 로드

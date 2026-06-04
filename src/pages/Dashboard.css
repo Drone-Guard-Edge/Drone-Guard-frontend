@@ -165,25 +165,39 @@
   cursor: not-allowed;
 }
 
-/* 메인 컨테이너 - 2컬럼 레이아웃 */
+/* 메인 컨테이너 - 3컬럼 레이아웃: 알림 | 탐지 뷰어 | 요약+피드 */
 .dashboard-main {
   display: grid;
-  grid-template-columns: 2.5fr 0.7fr;
-  gap: 24px;
+  grid-template-columns: 280px 1fr 300px;
+  gap: 20px;
   max-width: 1400px;
   margin: 0 auto;
+  align-items: start;
 }
 
+/* 좌측: 알림 패널 */
+.dashboard-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: sticky;
+  top: 20px;
+}
+
+/* 중앙: 탐지 뷰어 */
 .dashboard-left {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
+  min-width: 0;       /* grid overflow 방지 */
 }
 
+/* 우측: 요약 + 피드 */
 .dashboard-right {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
+  min-width: 0;
 }
 
 /* 요약 섹션 */
@@ -240,10 +254,18 @@
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
+/* 탐지 뷰어 - 너비 제한 */
 .detection-section {
   max-width: 100%;
   width: 100%;
   overflow: hidden;
+}
+
+/* 뷰어 내 캔버스/이미지가 컨테이너를 넘지 않도록 */
+.detection-section canvas,
+.detection-section img {
+  max-width: 100%;
+  height: auto;
 }
 
 .detection-section h2,
@@ -372,13 +394,33 @@
 }
 
 /* 반응형 */
-@media (max-width: 1024px) {
+@media (max-width: 1200px) {
   .dashboard-main {
-    grid-template-columns: 1fr;
+    grid-template-columns: 240px 1fr 260px;
   }
 }
 
+@media (max-width: 1024px) {
+  .dashboard-main {
+    /* 알림을 위로, 뷰어+피드 아래 2컬럼 */
+    grid-template-columns: 1fr 280px;
+    grid-template-areas:
+      "alerts alerts"
+      "viewer sidebar";
+  }
+  .dashboard-alerts { grid-area: alerts; position: static; }
+  .dashboard-left   { grid-area: viewer; }
+  .dashboard-right  { grid-area: sidebar; }
+}
+
 @media (max-width: 768px) {
+  .dashboard-main {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "alerts"
+      "viewer"
+      "sidebar";
+  }
   .dashboard-header {
     flex-direction: column;
     align-items: flex-start;
